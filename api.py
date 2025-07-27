@@ -33,6 +33,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Health Check ---
+@app.get("/")
+def health_check():
+    return {"status": "healthy", "service": "LinkedIn Profile Optimizer API"}
+
 # --- Memory/Checkpointer Setup ---
 # This is a robust way to handle DB connections in a web server
 conn = sqlite3.connect("memory.sqlite", check_same_thread=False)
