@@ -1,0 +1,13 @@
+streamlit
+langchain
+langgraph
+langchain-openai
+python-dotenv
+apify-client
+lxml
+beautifulsoup4
+langchain_community
+fastapi
+uvicorn[standard]
+requests
+ddgs 
