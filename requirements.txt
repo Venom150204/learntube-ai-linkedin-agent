@@ -8,6 +8,7 @@ lxml
 beautifulsoup4
 langchain_community
 fastapi
-uvicorn[standard]
+uvicorn
 requests
-ddgs 
+ddgs
+langgraph-sqlite 
