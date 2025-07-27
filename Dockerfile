@@ -15,5 +15,5 @@ COPY . .
 # Railway sets PORT environment variable
 EXPOSE 8000
 
-# Use PORT from environment, default to 8000
-CMD ["sh", "-c", "uvicorn api:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Railway will override this with startCommand from railway.toml
+CMD ["python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
