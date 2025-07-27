@@ -11,4 +11,4 @@ fastapi
 uvicorn
 requests
 duckduckgo-search
-langgraph-sqlite 
+langgraph-checkpoint-sqlite
