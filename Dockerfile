@@ -15,5 +15,5 @@ COPY . .
 # Railway sets PORT environment variable
 EXPOSE 8000
 
-# Railway will override this with startCommand from railway.toml
-CMD ["python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use Python script to handle PORT variable properly
+CMD ["python", "start.py"]

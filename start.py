@@ -1,0 +1,16 @@
+import os
+import sys
+import uvicorn
+
+if __name__ == "__main__":
+    # Get PORT from environment, default to 8000
+    port = int(os.environ.get("PORT", "8000"))
+    print(f"Starting server on port {port}")
+    
+    # Run the FastAPI app
+    uvicorn.run(
+        "api:app",
+        host="0.0.0.0",
+        port=port,
+        reload=False
+    )
