@@ -10,5 +10,5 @@ langchain_community
 fastapi
 uvicorn
 requests
-duckduckgo-search
 langgraph-checkpoint-sqlite
+lxml-html-clean
