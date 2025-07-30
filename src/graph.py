@@ -1,18 +1,18 @@
-import os
 from typing import TypedDict, Annotated, List, Literal, Dict
-from langchain_core.messages import  HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_community.utilities import SearxSearchWrapper
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, Field
+import os
 import json
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-# -- Pydantic Models for Structured Output --
+# -- Pydantic Models for Structured Output & Planning --
 class JobSuggestion(BaseModel):
     """A single job suggestion tailored to a user's profile."""
 
@@ -73,40 +73,39 @@ class SearchIntent(BaseModel):
     )
 
 
+class Plan(BaseModel):
+    """A plan of sequential tasks to be executed by the agent."""
+
+    tasks: List[
+        Literal["search", "job_fit_analyst", "content_enhancer", "career_counselor"]
+    ] = Field(
+        description="A list of tools representing the ordered sequence of tasks to execute. The first task in the list is the first one to be executed."
+    )
+
+
 # -- State Definition --
 class GraphState(TypedDict):
     """
     Represents the state of our graph.
-
-    Attributes:
-        messages: The history of messages in the conversation.
-        profile_data: The LinkedIn profile data scraped at the start.
-        job_description: The job description currently being analyzed.
-        researched_jobs: A cache of job titles to their synthesized descriptions from the search node.
-        next_node: The next node to route to.
     """
 
     messages: Annotated[list, lambda x, y: x + y]
     profile_data: str
     job_description: str | None = None
     researched_jobs: Dict[str, str] = {}
-    next_node: str | None = None
+    plan: List[str] = []
+    original_user_request: str | None = None
 
 
 # -- Agent Nodes --
 
 
 def profile_analyzer_node(state: GraphState):
+    """
+    Analyzes the user's profile on the first turn.
+    """
     print("\n--- Running Profile Analyzer ---")
-    llm = ChatOpenAI(model="gpt-4o")
-    try:
-        profile_data = json.loads(state.get("profile_data", "{}"))
-        if "error" in profile_data:
-            error_message = f"I'm sorry, an error occurred while scraping the profile: {profile_data['error']}"
-            return {"messages": [AIMessage(content=error_message)]}
-    except (json.JSONDecodeError, TypeError):
-        error_message = "I'm sorry, but the scraped data was not in a valid format. Please try again."
-        return {"messages": [AIMessage(content=error_message)]}
+    llm = ChatOpenAI(model="gpt-4-turbo", temperature=0.7)
     prompt = f"""
     You are a world-class LinkedIn profile optimization expert, speaking in the first person. Your analysis should be structured, insightful, and professional.
     Analyze the following LinkedIn profile and provide a summary of strengths and weaknesses.
@@ -118,7 +117,7 @@ def profile_analyzer_node(state: GraphState):
     Profile Data: {state['profile_data']}
     """
     response = llm.invoke([HumanMessage(content=prompt)])
-    return {"messages": [response]}
+    return {"messages": [response], "plan": []}
 
 
 def _perform_search_and_synthesis(job_title: str) -> str | None:
@@ -142,7 +141,7 @@ def _perform_search_and_synthesis(job_title: str) -> str | None:
     if not all_results:
         return None
 
-    synthesizer_llm = ChatOpenAI(model="gpt-4o")
+    synthesizer_llm = ChatOpenAI(model="gpt-4-turbo")
     results_str = "\n".join(
         [
             f"Title: {res.get('title', 'N/A')}\nSnippet: {res.get('snippet', 'N/A')}"
@@ -164,18 +163,13 @@ def _perform_search_and_synthesis(job_title: str) -> str | None:
 
 def search_node(state: GraphState):
     """
-    A dedicated research node. It determines if the user wants suggestions
-    or analysis of a specific role, performs the necessary research, and
-    updates the state with its findings.
+    A dedicated research node.
     """
     print("\n--- Running Search Node ---")
     user_request = state["messages"][-1].content
     profile_data = state.get("profile_data")
 
-    # Use an LLM to determine the user's search intent
-    intent_llm = ChatOpenAI(model="gpt-4o", temperature=0).with_structured_output(
-        SearchIntent
-    )
+    intent_llm = ChatOpenAI(model="gpt-4o-mini").with_structured_output(SearchIntent)
     intent_prompt = f"""
     Analyze the user's request to determine their search-related intent.
 
@@ -188,27 +182,23 @@ def search_node(state: GraphState):
     print(f"Search Intent: {intent_result.intent}")
 
     if intent_result.intent == "suggest_roles":
-        # Proactively suggest roles based on profile
-        suggester_llm = ChatOpenAI(model="gpt-4o").with_structured_output(
-            JobSuggestions
+        suggester_llm = ChatOpenAI(model="gpt-4-turbo").with_structured_output(
+            JobSuggestions, method="function_calling"
         )
         suggester_prompt = f"Analyze the user's profile and suggest three relevant job titles.\n\nUser Profile: --- {profile_data} ---"
         suggestions = suggester_llm.invoke(suggester_prompt).suggestions
-        
+
         researched_jobs = {}
         for suggestion in suggestions:
-            # For each suggestion, perform the deep research and cache it.
             jd = _perform_search_and_synthesis(suggestion.job_title)
             if jd:
                 researched_jobs[suggestion.job_title] = jd
-        
-        # Return a concise list to the user, but the detailed JDs are now in the state.
+
         response_text = "Based on your profile, I've researched a few roles that seem like a great fit:\n\n" + "\n".join(
             f"- **{s.job_title}**: {s.justification}" for s in suggestions
         )
         response_text += "\n\nWould you like a detailed analysis of your profile against any of these roles?"
-        
-        # Explicitly set job_description to None to prevent the analyst from running.
+
         return {
             "messages": [AIMessage(content=response_text)],
             "researched_jobs": researched_jobs,
@@ -216,28 +206,28 @@ def search_node(state: GraphState):
         }
 
     elif intent_result.intent == "analyze_specific_role":
-        # Research a specific job title provided by the user
         job_title = intent_result.job_title
         if not job_title:
             return {"messages": [AIMessage(content="I'm sorry, I couldn't identify a specific job title in your request. Could you please clarify?")]}
-        
+
         job_description = _perform_search_and_synthesis(job_title)
         if not job_description:
             return {"messages": [AIMessage(content=f"I'm sorry, I couldn't find enough information for '{job_title}'.")]}
-            
+
         summary_message = AIMessage(
             content=f"I've researched the role of **{job_title}**. I will now proceed with the analysis."
         )
         return {"messages": [summary_message], "job_description": job_description}
 
-    # Fallback
     return {"messages": [AIMessage(content="I'm not sure how to handle that request. Could you rephrase?")]}
 
 
 def job_fit_analyst_node(state: GraphState):
+    """
+    Compares the user's profile to a job description.
+    """
     print("\n--- Running Job Fit Analyst ---")
-    llm = ChatOpenAI(model="gpt-4o")
-    structured_llm = llm.with_structured_output(JobFitAnalysis)
+    structured_llm = ChatOpenAI(model="gpt-4-turbo").with_structured_output(JobFitAnalysis, method="function_calling")
 
     prompt = f"""
     Provide a detailed, actionable comparison between the provided LinkedIn profile and the target job description.
@@ -252,24 +242,20 @@ def job_fit_analyst_node(state: GraphState):
     {state['job_description']}
     ---
     """
-    analysis: JobFitAnalysis = structured_llm.invoke(prompt)
+    analysis = structured_llm.invoke(prompt)
 
-    # Format the structured output into a beautiful markdown string for the user
     markdown_output = f"### Job Fit Analysis\n\n"
     markdown_output += (
         f"**Overall Match Score**: **{analysis.match_score}%**\n"
         f"_{analysis.score_reasoning}_\n\n"
     )
-
     markdown_output += "**Keyword Analysis**:\n"
     for keyword in analysis.keyword_analysis:
         status = "✅ Present" if keyword.is_present else "❌ Missing"
         markdown_output += f"- **{keyword.keyword}**: {status}\n"
-
     markdown_output += "\n**Your Strengths for this Role**:\n"
     for strength in analysis.strengths:
         markdown_output += f"- {strength}\n"
-
     markdown_output += "\n**Actionable Gaps & Suggestions**:\n"
     for gap in analysis.gaps:
         markdown_output += f"- {gap}\n"
@@ -278,11 +264,13 @@ def job_fit_analyst_node(state: GraphState):
 
 
 def content_enhancer_node(state: GraphState):
+    """
+    Rewrites a specific section of the user's profile.
+    """
     print("\n--- Running Proactive Content Enhancer ---")
-    llm = ChatOpenAI(model="gpt-4o")
-    user_request = state["messages"][-1].content
+    llm = ChatOpenAI(model="gpt-4-turbo", temperature=0.7)
+    user_request = state["original_user_request"] or state["messages"][-1].content
 
-    # New: Identify all sections mentioned by the user
     sections_to_rewrite = []
     if "headline" in user_request.lower():
         sections_to_rewrite.append("headline")
@@ -291,12 +279,9 @@ def content_enhancer_node(state: GraphState):
     if "experience" in user_request.lower():
         sections_to_rewrite.append("experience")
 
-    # If no specific section is mentioned, default to a full review
     if not sections_to_rewrite:
         sections_to_rewrite = ["headline", "about", "experience"]
-        print(
-            f"No specific section found in request, defaulting to full review of: {sections_to_rewrite}"
-        )
+        print(f"No specific section found in request, defaulting to full review of: {sections_to_rewrite}")
     else:
         print(f"Identified sections for rewrite: {sections_to_rewrite}")
 
@@ -329,8 +314,11 @@ def content_enhancer_node(state: GraphState):
 
 
 def career_counselor_node(state: GraphState):
+    """
+    Provides general career advice.
+    """
     print("\n--- Running Career Counselor ---")
-    llm = ChatOpenAI(model="gpt-4o")
+    llm = ChatOpenAI(model="gpt-4-turbo", temperature=0.7)
     prompt = f"""
     You are a pragmatic, senior-level career coach. Your advice must be realistic and based on tangible steps.
     Use the user's profile and conversation history to inform your response, but **do not mention that you are reviewing them.** Respond directly to the user's query.
@@ -348,89 +336,150 @@ def career_counselor_node(state: GraphState):
     return {"messages": [response]}
 
 
-# -- Conditional Logic --
+# -- Planning and Control Flow --
 
-def router_node(state: GraphState):
+def planner_node(state: GraphState):
     """
-    The master router. It first checks for "cached" searches, then uses an LLM
-    to delegate to the appropriate primary tool.
+    The master planner. It creates a multi-step plan based on the user's request.
+    This is the primary entry point for all multi-turn conversations.
     """
-    print("\n--- Running Master Router ---")
-    user_request = state["messages"][-1].content.lower()
-
-    # On the first turn, always go to the analyzer
-    if len(state["messages"]) <= 1:
-        return {"next_node": "profile_analyzer"}
-
-    # Check if the user is asking about a job we just researched.
-    if state.get("researched_jobs"):
-        # If the user's request is not about a cached job, clear the cache.
-        is_follow_up = any(
-            job_title.lower() in user_request
-            for job_title in state["researched_jobs"]
-        )
-        if not is_follow_up:
-            print("Router Decision: Not a follow-up. Clearing researched_jobs cache.")
-            state["researched_jobs"] = {}
-
-        # Now, check again for the follow-up
-        for job_title in state["researched_jobs"]:
-            if job_title.lower() in user_request:
-                print(f"Router Decision: Cached job '{job_title}' found. Skipping search.")
-                return {
-                    "job_description": state["researched_jobs"][job_title],
-                    "next_node": "job_fit_analyst",
-                }
-
-    # If not a cached request, use the LLM to choose the next agent.
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
-    tools = [
-        {"type": "function", "function": {"name": "search", "description": "Used for finding, suggesting, or analyzing job roles."}},
-        {"type": "function", "function": {"name": "content_enhancer", "description": "Used for rewriting or improving profile sections."}},
-        {"type": "function", "function": {"name": "career_counselor", "description": "Used for general career advice."}},
-    ]
-    prompt = f"You are an expert router. Choose the correct tool for the user's request.\n\nUser's Request: '{user_request}'"
-    response = llm.invoke(prompt, tools=tools)
-    next_node = response.tool_calls[0]["name"] if response.tool_calls else "career_counselor"
+    print("\n--- Running Master Planner ---")
+    user_request = state["messages"][-1].content
+    profile_data = state["profile_data"]
     
-    print(f"Router Decision: Delegating to '{next_node}'.")
-    return {"next_node": next_node}
+    if len(user_request) > 300 and "responsibilities" in user_request.lower():
+        print("Planner: Pasted job description detected. Planning direct analysis.")
+        tasks = ["job_fit_analyst"]
+        # Check if a rewrite is also requested.
+        if "rewrite" in user_request.lower() or "enhance" in user_request.lower():
+            tasks.append("content_enhancer")
+        return {"plan": tasks, "job_description": user_request, "original_user_request": user_request}
+
+    planner_llm = ChatOpenAI(model="gpt-4-turbo").with_structured_output(Plan, method="function_calling")
+    tools_string = """
+        - `search`: Use for finding, suggesting, or researching specific job roles.
+        - `job_fit_analyst`: Use for comparing the user's profile against a job description. This should always follow 'search' unless a JD is pasted.
+        - `content_enhancer`: Use for rewriting or improving a profile section.
+        - `career_counselor`: Use for general career advice.
+    """
+    prompt = f"""
+    You are an expert AI task planner. Create a logical, step-by-step plan to address the user's request using the available tools.
+
+    **User's Profile Summary:**
+    ---
+    {profile_data[:300]}...
+    ---
+
+    **User's Request:**
+    ---
+    "{user_request}"
+    ---
+
+    **Available Tools:**
+    {tools_string}
+
+    Create a plan as a list of tool names in the precise order of execution.
+    """
+    plan_result = planner_llm.invoke(prompt)
+    tasks = plan_result.tasks
+    print(f"Planner: Generated plan: {tasks}")
+
+    if "job_fit_analyst" in tasks and state.get("researched_jobs"):
+        for job_title, jd in state["researched_jobs"].items():
+            if job_title.lower() in user_request.lower():
+                print(f"Planner: Found cached job '{job_title}'. Modifying plan.")
+                if 'search' in tasks:
+                    tasks.remove('search')
+                return {"plan": tasks, "job_description": jd, "original_user_request": user_request}
+
+    return {"plan": tasks, "original_user_request": user_request}
 
 
-def should_continue_to_analyst(state: GraphState):
-    """Conditional edge to decide whether to continue after a search."""
-    return "job_fit_analyst" if state.get("job_description") else END
+def plan_executor_node(state: GraphState):
+    """
+    The central control unit. Updates the plan and routes to the next task.
+    """
+    print("\n--- Executing Plan ---")
+    plan = state.get("plan", [])
+    if not plan:
+        print("Execution Complete. Ending.")
+        return {"plan": []}  # Return empty plan to signal completion
+    
+    # Remove the first task from the plan
+    remaining_plan = plan[1:]
+    print(f"Remaining tasks after current: {remaining_plan}")
+    return {"plan": remaining_plan}
+
+def route_next_task(state: GraphState):
+    """
+    Conditional edge function to determine the next task or end.
+    """
+    plan = state.get("plan", [])
+    if not plan:
+        return END
+    
+    next_task = plan[0]
+    print(f"Routing to next task: {next_task}")
+    return next_task
 
 
 def create_workflow(checkpointer: BaseCheckpointSaver):
     workflow = StateGraph(GraphState)
 
-    workflow.add_node("router", router_node)
+    # Add all nodes
     workflow.add_node("profile_analyzer", profile_analyzer_node)
+    workflow.add_node("planner", planner_node)
     workflow.add_node("search", search_node)
     workflow.add_node("job_fit_analyst", job_fit_analyst_node)
     workflow.add_node("content_enhancer", content_enhancer_node)
     workflow.add_node("career_counselor", career_counselor_node)
+    workflow.add_node("plan_executor", plan_executor_node)
 
-    workflow.set_entry_point("router")
+    # Define the entry point
+    def route_to_planner(state: GraphState):
+        return "profile_analyzer" if len(state["messages"]) <= 1 else "planner"
 
-    workflow.add_conditional_edges(
-        "router",
-        lambda state: state["next_node"],
+    workflow.set_conditional_entry_point(
+        route_to_planner,
         {
             "profile_analyzer": "profile_analyzer",
-            "search": "search",
-            "job_fit_analyst": "job_fit_analyst", # Direct route from stateful router
-            "content_enhancer": "content_enhancer",
-            "career_counselor": "career_counselor",
+            "planner": "planner",
         },
     )
 
-    workflow.add_conditional_edges("search", should_continue_to_analyst)
-
+    # Define the main operational loop
+    workflow.add_conditional_edges(
+        "planner",
+        route_next_task,
+        {
+            "search": "search",
+            "job_fit_analyst": "job_fit_analyst", 
+            "content_enhancer": "content_enhancer",
+            "career_counselor": "career_counselor",
+            END: END,
+        },
+    )
+    
+    # After a task, go to plan executor to update plan, then route to next task
+    workflow.add_edge("search", "plan_executor")
+    workflow.add_edge("job_fit_analyst", "plan_executor")
+    workflow.add_edge("content_enhancer", "plan_executor")
+    workflow.add_edge("career_counselor", "plan_executor")
+    
+    # The initial profile analysis is a one-off task
     workflow.add_edge("profile_analyzer", END)
-    workflow.add_edge("job_fit_analyst", END)
-    workflow.add_edge("content_enhancer", END)
-    workflow.add_edge("career_counselor", END)
+
+    # The executor updates the plan and routes to the next task
+    workflow.add_conditional_edges(
+        "plan_executor",
+        route_next_task,
+        {
+            "search": "search",
+            "job_fit_analyst": "job_fit_analyst",
+            "content_enhancer": "content_enhancer", 
+            "career_counselor": "career_counselor",
+            END: END,
+        },
+    )
 
     return workflow.compile(checkpointer=checkpointer)
