@@ -1,6 +1,5 @@
 from typing import Dict, Optional, List
 from langchain_core.messages import HumanMessage, AIMessage
-from langchain_openai import ChatOpenAI
 from langchain_community.utilities import SearxSearchWrapper
 from pydantic import ValidationError
 import os
@@ -20,7 +19,9 @@ from src.core.error_handling import (
 )
 from src.core.llm_utils import (
     get_llm_with_fallback,
-    call_llm_with_retry
+    call_llm_with_retry,
+    extract_llm_content,
+    clean_json_response
 )
 from src.context_manager import ConversationContextManager
 
@@ -47,16 +48,34 @@ def profile_analyzer_node(state: GraphState):
         logger.warning(f"Profile data truncated from {len(profile_data)} to {MAX_PROFILE_LENGTH}")
         profile_data = profile_data[:MAX_PROFILE_LENGTH]
     
-    llm = get_llm_with_fallback(model="gpt-4-turbo", temperature=0.7)
+    llm = get_llm_with_fallback(model="llama-3.3-70b-versatile", temperature=0.7)
     
     prompt = f"""
     You are a world-class LinkedIn profile optimization expert, speaking in the first person. Your analysis should be structured, insightful, and professional.
     Analyze the following LinkedIn profile and provide a summary of strengths and weaknesses.
-    **Structure your response as follows:**
-    1.  **Overall Impression:** Start with a brief, one-sentence summary of the profile.
-    2.  **Key Strengths:** Provide 3-5 bullet points highlighting what the user is doing well.
-    3.  **Critical Areas for Improvement:** Provide 3-5 bullet points on the most important things to fix.
-    4.  **Next Steps:** Conclude by encouraging me to ask follow-up questions, such as "You can ask me to rewrite your 'About' section, or we can analyze your profile against a specific job role."
+    
+    IMPORTANT: Use proper markdown formatting with clear headings and bullet points.
+    
+    Structure your response EXACTLY as follows:
+    
+    ## 1. Overall Impression
+    [One sentence summary]
+    
+    ## 2. Key Strengths
+    • [Strength 1]
+    • [Strength 2] 
+    • [Strength 3]
+    • [Add more if needed]
+    
+    ## 3. Critical Areas for Improvement
+    • [Improvement 1]
+    • [Improvement 2]
+    • [Improvement 3]
+    • [Add more if needed]
+    
+    ## 4. Next Steps
+    [Encourage follow-up questions]
+    
     Profile Data: {profile_data}
     """
     
@@ -76,7 +95,7 @@ def _fallback_role_suggestions(profile_data: str, job_history: List) -> Dict:
     print("Generating tailored role suggestions based on profile")
 
     # Use LLM for deep profile analysis and role matching
-    role_advisor = ChatOpenAI(model="gpt-4-turbo", temperature=0.3)
+    role_advisor = get_llm_with_fallback(model="llama-3.3-70b-versatile", temperature=0.3)
 
     role_suggestion_prompt = f"""
     As a career advisor, analyze this profile and suggest 4-5 job roles that are PERFECT matches.
@@ -207,7 +226,7 @@ def _perform_search_and_synthesis(job_title: str) -> Optional[str]:
             return fallback_description
 
         # Synthesize results
-        synthesizer_llm = get_llm_with_fallback(model="gpt-4o-mini", temperature=0.3)
+        synthesizer_llm = get_llm_with_fallback(model="llama-3.1-8b-instant", temperature=0.3)
         results_str = "\n".join(
             [
                 f"Title: {res.get('title', 'N/A')}\nSnippet: {res.get('snippet', 'N/A')}"
@@ -257,7 +276,7 @@ def search_node(state: GraphState):
     print("Search Node: Planner sent us here, so we search - no questions asked")
 
     try:
-        intent_llm = get_llm_with_fallback(model="gpt-4o-mini").with_structured_output(SearchIntent)
+        intent_llm = get_llm_with_fallback(model="gemma2-9b-it")
         intent_prompt = f"""
         Analyze the user's request to determine their search-related intent.
 
@@ -265,9 +284,22 @@ def search_node(state: GraphState):
         2. If the user provides a specific job title to be analyzed or compared against, the intent is 'analyze_specific_role'.
         3. If the user has pasted what looks like a job description (with requirements, skills, experience sections), treat it as 'analyze_specific_role' with the title "Data Scientist" or extract the most relevant title from the description.
 
+        Return ONLY a JSON object in this format:
+        {{"intent": "suggest_roles" or "analyze_specific_role", "job_title": "title if analyze_specific_role else null"}}
+
         User Request: "{user_request[:1000]}"  # Limit request length
         """
-        intent_result = intent_llm.invoke(intent_prompt)
+        response = intent_llm.invoke(intent_prompt)
+        import json
+        
+        # Extract content from response
+        content = extract_llm_content(response)
+        
+        # Clean the JSON response
+        content = clean_json_response(content)
+        
+        intent_dict = json.loads(content)
+        intent_result = SearchIntent(**intent_dict)
         print(f"Search Intent: {intent_result.intent}")
     except Exception as e:
         logger.error(f"Failed to determine intent: {e}")
@@ -280,7 +312,7 @@ def search_node(state: GraphState):
         )
 
         # Extract key info from profile for role suggestions
-        profile_analyzer = ChatOpenAI(model="gpt-4-turbo", temperature=0.2)
+        profile_analyzer = get_llm_with_fallback(model="llama-3.3-70b-versatile", temperature=0.2)
         profile_analysis_prompt = f"""
         Analyze this LinkedIn profile to understand the person's background and experience level.
         
@@ -405,13 +437,26 @@ def job_fit_analyst_node(state: GraphState):
         if len(job_description) > MAX_MESSAGE_LENGTH:
             job_description = job_description[:MAX_MESSAGE_LENGTH]
         
-        structured_llm = get_llm_with_fallback(model="gpt-4-turbo").with_structured_output(
-            JobFitAnalysis, method="function_calling"
-        )
+        # For Groq, we'll use JSON mode instead of structured output
+        llm = get_llm_with_fallback(model="llama-3.3-70b-versatile")
 
         prompt = f"""
         Provide a detailed, actionable comparison between the provided LinkedIn profile and the target job description.
         Your analysis must be completely objective and based *only* on the text provided.
+
+        IMPORTANT: Return ONLY the JSON object. Do not include any text before or after the JSON.
+        Do not include markdown formatting. Do not include explanations.
+
+        Return your response as valid JSON in the following format:
+        {{
+            "match_score": <0-100>,
+            "score_reasoning": "<reasoning for the score>",
+            "keyword_analysis": [
+                {{"keyword": "<keyword>", "is_present": true/false, "reasoning": "<why present/absent>"}}
+            ],
+            "strengths": ["<strength 1>", "<strength 2>", ...],
+            "gaps": ["<gap 1>", "<gap 2>", ...]
+        }}
 
         **LinkedIn Profile:**
         ---
@@ -423,13 +468,32 @@ def job_fit_analyst_node(state: GraphState):
         ---
         """
         
-        analysis = call_llm_with_retry(structured_llm, prompt)
+        response = call_llm_with_retry(llm, prompt)
+        
+        # Parse JSON response
+        import json
+        try:
+            # Extract content from response
+            content = extract_llm_content(response)
+            print(f"DEBUG: Response content type: {type(content)}")
+            print(f"DEBUG: Response content (first 200 chars): {content[:200] if content else 'Empty'}")
+            
+            # Clean the JSON response
+            content = clean_json_response(content)
+            print(f"DEBUG: Cleaned JSON content (first 200 chars): {content[:200] if content else 'Empty'}")
+            
+            analysis_dict = json.loads(content)
+            analysis = JobFitAnalysis(**analysis_dict)
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.error(f"Failed to parse structured response: {e}")
+            logger.error(f"Raw content: {content if 'content' in locals() else 'No content extracted'}")
+            raise
         
     except ValidationError as e:
         logger.error(f"Validation error in job fit analysis: {e}")
         # Fallback to unstructured response
         try:
-            fallback_llm = get_llm_with_fallback(model="gpt-4o-mini")
+            fallback_llm = get_llm_with_fallback(model="llama-3.1-8b-instant")
             fallback_prompt = f"""
             Compare this profile to the job description and provide:
             1. Overall match percentage (0-100)
@@ -462,21 +526,21 @@ def job_fit_analyst_node(state: GraphState):
             "plan": []
         }
 
-    markdown_output = f"### Job Fit Analysis\n\n"
+    markdown_output = f"# Job Fit Analysis\n\n"
     markdown_output += (
-        f"**Overall Match Score**: **{analysis.match_score}%**\n"
-        f"_{analysis.score_reasoning}_\n\n"
+        f"## Overall Match Score: **{analysis.match_score}%**\n\n"
+        f"*{analysis.score_reasoning}*\n\n"
     )
-    markdown_output += "**Keyword Analysis**:\n"
+    markdown_output += "## Keyword Analysis\n\n"
     for keyword in analysis.keyword_analysis:
         status = "✅ Present" if keyword.is_present else "❌ Missing"
-        markdown_output += f"- **{keyword.keyword}**: {status}\n"
-    markdown_output += "\n**Your Strengths for this Role**:\n"
+        markdown_output += f"• **{keyword.keyword}**: {status}\n"
+    markdown_output += "\n## Your Strengths for this Role\n\n"
     for strength in analysis.strengths:
-        markdown_output += f"- {strength}\n"
-    markdown_output += "\n**Actionable Gaps & Suggestions**:\n"
+        markdown_output += f"• {strength}\n"
+    markdown_output += "\n## Actionable Gaps & Suggestions\n\n"
     for gap in analysis.gaps:
-        markdown_output += f"- {gap}\n"
+        markdown_output += f"• {gap}\n"
 
     return {"messages": [AIMessage(content=markdown_output)]}
 
@@ -505,7 +569,7 @@ def content_enhancer_node(state: GraphState):
             "plan": []
         }
     
-    llm = get_llm_with_fallback(model="gpt-4-turbo", temperature=0.7)
+    llm = get_llm_with_fallback(model="llama-3.3-70b-versatile", temperature=0.7)
 
     sections_to_rewrite = []
     if "headline" in user_request.lower():
@@ -532,12 +596,12 @@ def content_enhancer_node(state: GraphState):
 
     I want you to enhance my LinkedIn profile based on my request. Here is your task:
 
-    1.  **Generate Rewrites:** For each of the following sections I've asked for (`{', '.join(sections_to_rewrite)}`), provide a rewritten, enhanced version based on the rules below. Present each rewritten section under a clear markdown heading (e.g., `### Enhanced About Section`).
+    1.  **Generate Rewrites:** For each of the following sections I've asked for (`{', '.join(sections_to_rewrite)}`), provide a rewritten, enhanced version based on the rules below. Present each rewritten section under a clear markdown heading (e.g., `## Enhanced About Section`).
         *   **For 'headline':** Create a concise, keyword-rich headline (under 220 characters) that includes my current role and key area of expertise (e.g., "Software Engineer at XYZ | Building with Generative AI & LLMs").
         *   **For 'about':** Write a compelling, first-person summary (under 150 words) that tells a story about my passion and impact.
         *   **For 'experience':** For my most recent job role, rewrite the description using 3-4 bullet points. Each bullet point **must be a single, flowing sentence that internally follows the STAR method (Situation, Task, Action, Result)** but **DO NOT** explicitly write the words "Situation:", "Task:", "Action:", or "Result:". For example, instead of "Situation: Faced with X... Task: Needed to Y... Action: I did Z... Result: Achieved A...", write "- Achieved A by implementing Z to solve the challenge of X, which was required for Y." Include quantifiable metrics.
 
-    2.  **Be Proactive:** After you have rewritten the sections I asked for, analyze my entire profile. Identify the **single most valuable section** that I *did not* ask you to improve. Then, provide an enhanced version of it under the heading `### Proactive Suggestion:`.
+    2.  **Be Proactive:** After you have rewritten the sections I asked for, analyze my entire profile. Identify the **single most valuable section** that I *did not* ask you to improve. Then, provide an enhanced version of it under the heading `## Proactive Suggestion`.
 
     **My Full Profile:**
     ---
@@ -595,7 +659,7 @@ def career_counselor_node(state: GraphState):
     recent_messages = messages[-5:] if len(messages) > 5 else messages
     messages_str = "\n".join([str(msg.content)[:500] if hasattr(msg, 'content') else str(msg)[:500] for msg in recent_messages])
     
-    llm = get_llm_with_fallback(model="gpt-4-turbo", temperature=0.7)
+    llm = get_llm_with_fallback(model="llama-3.3-70b-versatile", temperature=0.7)
     
     prompt = f"""
     You are a pragmatic, senior-level career coach. Your advice must be realistic and based on tangible steps.
@@ -758,7 +822,7 @@ def planner_node(state: GraphState):
                 state_updates["plan"].append("content_enhancer")
 
         else:  # general request - use smart LLM planning
-            planner_llm = ChatOpenAI(model="gpt-4-turbo").with_structured_output(Plan)
+            planner_llm = get_llm_with_fallback(model="llama-3.3-70b-versatile")
 
             context_summary = ConversationContextManager.get_context_summary(
                 job_history
@@ -796,9 +860,26 @@ def planner_node(state: GraphState):
             Role suggestions = search only!
             """
 
-            plan_result = planner_llm.invoke(prompt)
-            state_updates["plan"] = plan_result.tasks
-            print(f"Planner: Smart LLM generated plan: {plan_result.tasks}")
+            # Add JSON format to prompt
+            prompt += """
+            
+            Return ONLY a JSON object in this format:
+            {"tasks": ["search", "job_fit_analyst", "content_enhancer", "career_counselor"]}
+            Include only the tasks needed.
+            """
+            
+            response = planner_llm.invoke(prompt)
+            import json
+            
+            # Extract content from response
+            content = extract_llm_content(response)
+            
+            # Clean the JSON response
+            content = clean_json_response(content)
+            
+            plan_dict = json.loads(content)
+            state_updates["plan"] = plan_dict["tasks"]
+            print(f"Planner: Smart LLM generated plan: {plan_dict['tasks']}")
 
         # Safety validations
         if "job_fit_analyst" in state_updates["plan"] and not state_updates.get(

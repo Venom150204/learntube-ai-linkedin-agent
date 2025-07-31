@@ -3,3 +3,11 @@ port = 8501
 
 [theme]
 base = "light"
+
+[theme]
+primaryColor = "#3b82f6"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f8fafc"
+textColor = "#1f2937"
+font = "sans serif"
+

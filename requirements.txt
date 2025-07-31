@@ -2,6 +2,7 @@ streamlit
 langchain
 langgraph
 langchain-openai
+langchain-groq
 python-dotenv
 apify-client
 lxml

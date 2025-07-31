@@ -39,3 +39,5 @@ Thumbs.db
 .memory.sqlite-shm
 .memory.sqlite-wal
 .memory.sqlite-journal
+
+.test_inputs.txt

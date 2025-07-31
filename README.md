@@ -14,16 +14,18 @@ This project is an AI-powered chat system that helps users optimize their Linked
 - **Enhanced Job Description Detection**: Automatically recognizes when you paste a job description.
 - **Improved Multi-Task Planning**: Handle complex requests that require multiple analysis steps.
 - **Production-Grade Error Handling**: Robust error recovery and informative error messages.
+- **Sequential Task Execution**: Fixed workflow to properly execute multiple tasks in sequence (e.g., job analysis followed by content enhancement).
 
 ## Tech Stack
 
 - **Framework:** Streamlit
 - **AI Orchestration:** LangGraph
 - **LinkedIn Scraping:** Apify
-- **LLM:** OpenAI GPT-4o (with GPT-4-turbo for complex planning tasks)
+- **LLM:** Groq (using Llama 3.3 70B for main tasks, Llama 3.1 8B for fast operations)
 - **Memory:** LangGraph Checkpointers with SQLite
 - **Backend:** FastAPI
 - **State Management:** Enhanced GraphState with job history tracking
+- **Project Structure:** Modularized architecture with separate `src/` directory
 
 ## Setup
 
@@ -42,8 +44,16 @@ This project is an AI-powered chat system that helps users optimize their Linked
 
 3.  Create a `.env` file and add your API keys:
     ```
-    OPENAI_API_KEY="your_openai_api_key_here"
+    # Groq Configuration (Primary LLM)
+    GROQ_API_KEY="your_groq_api_key_here"
+    
+    # LinkedIn Scraping
     APIFY_API_KEY="your_apify_api_key_here"
+    
+    # Search functionality (optional)
+    SEARX_HOST='your_searx_instance_url'
+    
+    # LangChain Tracing (optional)
     LANGCHAIN_TRACING_V2="true"
     LANGCHAIN_API_KEY="your_langchain_api_key_here"
     ```
@@ -54,9 +64,9 @@ This project is an AI-powered chat system that helps users optimize their Linked
 
     **Terminal 1: Run the FastAPI Backend**
     ```bash
-    python api.py
+    python start.py
     ```
-    You will see logs in this terminal.
+    You will see logs in this terminal. The backend will run on port 8000 by default.
 
     **Terminal 2: Run the Streamlit Frontend**
     ```bash
@@ -66,15 +76,35 @@ This project is an AI-powered chat system that helps users optimize their Linked
 
 ## Architecture
 
-This application is built using a client-server architecture with an advanced context-aware AI system.
+This application is built using a client-server architecture with an advanced context-aware AI system and modularized codebase.
+
+### Project Structure:
+```
+LearnTube.ai/
+├── src/
+│   ├── api.py              # FastAPI backend server
+│   ├── graph.py            # LangGraph workflow definition
+│   ├── utils.py            # Utility functions (scraping, etc.)
+│   ├── context_manager.py  # Conversation context management
+│   ├── core/
+│   │   ├── error_handling.py  # Error handling decorators
+│   │   └── llm_utils.py       # LLM configuration and utilities
+│   ├── models/
+│   │   └── schemas.py      # Pydantic models and GraphState
+│   └── nodes/
+│       └── nodes.py        # All agent nodes in one file
+├── app.py                  # Streamlit frontend
+├── start.py               # Backend startup script
+└── requirements.txt       # Project dependencies
+```
 
 ### Core Components:
 
-1.  **FastAPI Backend (`api.py`)**: This is the core of the application, containing all the business logic. It exposes a REST API for the frontend to interact with.
+1.  **FastAPI Backend (`src/api.py`)**: This is the core of the application, containing all the business logic. It exposes a REST API for the frontend to interact with.
     *   **LangGraph Workflow**: The multi-agent system, router, and all AI logic reside here.
     *   **Checkpointer (Memory)**: The backend manages the `SqliteSaver` checkpointer for persistent, session-based memory.
     *   **Endpoints**: It provides endpoints to start a new chat, send a message, and get the history.
-    *   **Enhanced Error Handling**: Added traceback import for better debugging capabilities.
+    *   **Enhanced Error Handling**: Comprehensive error handling with proper logging.
 
 2.  **Streamlit Frontend (`app.py`)**: This provides the interactive chat interface for the user. It is a "dumb" client that simply makes HTTP requests to the FastAPI backend. It manages a `thread_id` to maintain the session with the backend.
 
@@ -144,4 +174,76 @@ The application now uses an advanced graph-based workflow system (`src/graph.py`
         - Assigns unique IDs to each job description
         - Tracks job history throughout the conversation
         - Intelligently resolves references like "the previous job" or "that data scientist role"
-        - Supports comparisons between multiple jobs 
+        - Supports comparisons between multiple jobs
+
+## Recent Updates and Improvements
+
+### LLM Migration to Groq (2025-07-31)
+- **Replaced OpenAI with Groq**: Migrated from OpenAI GPT models to Groq for better performance and cost efficiency
+- **Models Used**:
+  - `llama-3.3-70b-versatile`: Primary model for complex tasks (profile analysis, job fit, content enhancement)
+  - `llama-3.1-8b-instant`: Fast model for simple operations and fallback scenarios
+  - `gemma2-9b-it`: Used for structured output tasks
+- **JSON Mode**: Implemented JSON response parsing instead of function calling for better Groq compatibility
+
+### Critical Bug Fixes
+1. **Sequential Task Execution**: Fixed workflow bug where content_enhancer wasn't being called after job_fit_analyst
+   - Root cause: Nodes were clearing the plan array
+   - Solution: Removed plan clearing from individual nodes
+   
+2. **Intent Detection Order**: Fixed bug where pasted job descriptions were incorrectly classified
+   - Root cause: Intent detection checked for "new_analysis" before "pasted_jd"
+   - Solution: Reordered detection logic to check for pasted JDs first
+
+3. **Error Handler Intervention**: Removed unwanted error messages appearing during normal operation
+   - Root cause: Planner and executor nodes returning empty message arrays
+   - Solution: Removed message keys from nodes that shouldn't generate user-facing messages
+
+### Code Organization
+- **Modularized Structure**: Moved all source files to `src/` directory
+- **Consolidated Nodes**: All agent nodes are now in a single `src/nodes/nodes.py` file
+- **Proper Imports**: Fixed all import paths to use absolute imports
+- **Enhanced Logging**: Added comprehensive debug logging throughout the system
+
+## Deployment
+
+The application is configured for deployment using Docker and Railway:
+
+### Docker Deployment
+```bash
+docker build -t learntube-ai .
+docker run -p 8000:8000 --env-file .env learntube-ai
+```
+
+### Railway Deployment
+The project includes `railway.toml` and `Dockerfile` for easy Railway deployment:
+1. Connect your GitHub repository to Railway
+2. Add environment variables in Railway dashboard
+3. Deploy (Railway will automatically use the Dockerfile)
+
+### Environment Variables for Production
+```
+GROQ_API_KEY=your_groq_api_key
+APIFY_API_KEY=your_apify_api_key
+SEARX_HOST=your_searx_instance_url
+PORT=8000  # Railway sets this automatically
+```
+
+## API Endpoints
+
+- `POST /start_analysis`: Initialize a new analysis session with a LinkedIn URL
+- `POST /chat/{thread_id}`: Send a message in an existing session
+- `GET /history/{thread_id}`: Retrieve conversation history
+- `GET /`: Health check endpoint
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
