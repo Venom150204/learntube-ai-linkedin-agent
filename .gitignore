@@ -32,3 +32,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+.claude
+
+.memory.sqlite
+.memory.sqlite-shm
+.memory.sqlite-wal
+.memory.sqlite-journal

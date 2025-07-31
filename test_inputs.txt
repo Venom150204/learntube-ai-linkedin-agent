@@ -1,0 +1,212 @@
+===========================================
+TOUGH TEST INPUTS FOR LINKEDIN PROFILE OPTIMIZER
+===========================================
+
+TEST CATEGORY 1: MULTI-JOB ANALYSIS & COMPARISONS
+=================================================
+
+Test 1.1 - Multiple JDs in Single Query:
+----------------------------------------
+I need help with two roles. First one:
+
+Senior Data Scientist - TechCorp
+We are seeking an experienced Data Scientist to lead our ML initiatives.
+Requirements:
+- 5+ years in data science
+- Expert in Python, R, SQL
+- Deep learning experience (TensorFlow/PyTorch)
+- MLOps and deployment experience
+- Master's degree preferred
+
+Second role:
+
+Machine Learning Engineer - AI Startup
+Join our fast-paced team building next-gen AI products.
+Requirements:
+- 3+ years ML engineering
+- Strong software engineering skills
+- Python, Scala, Java
+- Cloud platforms (AWS/GCP)
+- Production ML systems
+
+Can you analyze my fit for both and tell me which suits me better?
+
+Test 1.2 - Sequential Job Analysis with References:
+--------------------------------------------------
+Analyze my fit for a Senior Data Analyst role at Microsoft
+
+[After response]
+Now check this one: Data Engineer at Google. Requirements include BigQuery, Dataflow, 4 years experience, Python, SQL, ETL pipelines
+
+[After response]
+Compare the Microsoft role with the Google one. Which aligns better with my background?
+
+[After response]
+What about the first role we discussed? How does that compare to the Google position?
+
+Test 1.3 - Vague References:
+----------------------------
+Can you analyze this role for me:
+[Paste long JD for Product Manager]
+
+[After response]
+What skills am I missing for that one?
+
+[After response]
+How does this compare to the previous positions we looked at?
+
+TEST CATEGORY 2: CONTEXT SWITCHING & MEMORY
+==========================================
+
+Test 2.1 - Mid-conversation Context Switch:
+------------------------------------------
+Analyze my fit for a DevOps Engineer role
+
+[After response]
+Actually, before we continue, can you help me rewrite my summary section to highlight my leadership experience?
+
+[After response]
+Now back to that DevOps role - what certifications would help?
+
+Test 2.2 - Multiple Enhancement Requests:
+----------------------------------------
+I want to apply for these 3 roles and need my profile optimized for each:
+1. Senior Backend Engineer - Focus on distributed systems
+2. Full Stack Developer - Emphasize React and Node.js
+3. Cloud Architect - Highlight AWS experience
+
+Rewrite my experience section for each role differently
+
+TEST CATEGORY 3: AMBIGUOUS & EDGE CASE INPUTS
+============================================
+
+Test 3.1 - Partial Job Description:
+-----------------------------------
+Here's a role I'm interested in but I only have partial info:
+
+Looking for Python developer
+Must have Django
+Startup environment
+[That's all I have]
+
+Can you research similar roles and analyze my fit?
+
+Test 3.2 - Implicit JD Detection:
+---------------------------------
+We are looking for someone with 5 years of experience in machine learning, strong Python skills, and experience with TensorFlow. The ideal candidate will have worked on recommendation systems and have a background in statistics. This is a remote position with competitive salary.
+
+Test 3.3 - Mixed Request:
+------------------------
+I found 3 interesting positions. First is a Data Scientist role requiring NLP experience. For the second position as ML Engineer, they want someone with Kubernetes knowledge. The third is a Research Scientist position at Meta. Can you analyze all three and also enhance my skills section to better match these roles?
+
+TEST CATEGORY 4: ERROR HANDLING & RECOVERY
+=========================================
+
+Test 4.1 - No Profile Context:
+------------------------------
+Compare my profile to this Senior Developer position at Amazon
+
+Test 4.2 - Confusing References:
+--------------------------------
+What about that other role?
+
+[After error]
+I mean the data scientist position we discussed
+
+Test 4.3 - Contradictory Requests:
+----------------------------------
+Don't analyze any jobs, just give me career advice
+
+[After response]
+Now analyze my fit for this role: [Paste JD]
+
+TEST CATEGORY 5: COMPLEX MULTI-TURN SCENARIOS
+============================================
+
+Test 5.1 - Full Conversation Flow:
+----------------------------------
+1. "What roles would suit someone with my background?"
+2. "Interesting, can you research Senior Data Scientist roles specifically?"
+3. "I found this job posting: [Paste actual JD]"
+4. "How does this compare to the researched role?"
+5. "What skills should I focus on developing?"
+6. "Rewrite my experience section to emphasize those skills"
+7. "Now I found another role: [Paste different JD]"
+8. "Which of these two roles am I better suited for?"
+9. "What about the very first suggestions you gave?"
+
+Test 5.2 - Stress Test with Multiple JDs:
+-----------------------------------------
+I'm applying to 5 different companies. Here are all the JDs:
+
+1. [Full JD for Software Engineer at Company A]
+2. [Full JD for Senior Developer at Company B]
+3. [Full JD for Tech Lead at Company C]
+4. [Full JD for Principal Engineer at Company D]
+5. [Full JD for Staff Engineer at Company E]
+
+Analyze all of them, rank them by fit, tell me what skills I need for each, and suggest how to tailor my profile for the top 3.
+
+TEST CATEGORY 6: NATURAL LANGUAGE VARIATIONS
+===========================================
+
+Test 6.1 - Colloquial Language:
+-------------------------------
+yo check if im good for this gig:
+[Casual JD paste]
+
+Test 6.2 - Non-English Terms Mixed:
+-----------------------------------
+I need analysis for a "Ingénieur en Machine Learning" position - it's basically an ML Engineer role in a French company but they want bilingual candidates
+
+Test 6.3 - Typos and Mistakes:
+------------------------------
+analze my fit for this positon as Senoir Data Scintist at Amazn. Also rewite my experince section
+
+TEST CATEGORY 7: BOUNDARY TESTING
+================================
+
+Test 7.1 - Extremely Long Input:
+-------------------------------
+[Paste 3000+ word job description with multiple sections, requirements, nice-to-haves, company description, etc.]
+
+Test 7.2 - Minimal Input:
+------------------------
+data scientist
+
+Test 7.3 - Multiple Quick Requests:
+----------------------------------
+Quick fire round:
+- Am I fit for Google?
+- What about Meta?
+- How about a startup?
+- Senior or junior roles?
+- Remote or onsite better?
+
+TEST CATEGORY 8: ADVANCED CONTEXT AWARENESS
+==========================================
+
+Test 8.1 - Pronoun Resolution:
+------------------------------
+There's this company that wants ML experience. They're looking for someone who can do both research and implementation. It sounds perfect but I'm not sure if I qualify. What do you think?
+
+Test 8.2 - Temporal References:
+-------------------------------
+Remember the first job we analyzed? How does it compare to the one we just looked at? Also, what was that middle role again - the one before the last one but after the first two?
+
+Test 8.3 - Implicit Comparisons:
+--------------------------------
+The Google role seems harder than the Microsoft one. But easier than that startup position. Am I right?
+
+===========================================
+END OF TEST INPUTS
+===========================================
+
+TESTING NOTES:
+- Each test should be run in a fresh session to test true multi-turn capabilities
+- Pay attention to how the system handles context switches
+- Verify that job IDs are properly tracked
+- Check if references are correctly resolved
+- Ensure error messages are helpful and guide the user
+- Test both the happy path and edge cases
+- Verify the Context Manager properly categorizes intents

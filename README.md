@@ -9,14 +9,21 @@ This project is an AI-powered chat system that helps users optimize their Linked
 - Job fit analysis with a match score and suggestions.
 - AI-powered content enhancement for profile sections.
 - Career counseling and skill gap analysis.
+- **Multi-Job Context Awareness**: Analyze and compare multiple job opportunities in a single conversation.
+- **Smart Reference Resolution**: Reference previously discussed jobs naturally (e.g., "compare the first job with this one").
+- **Enhanced Job Description Detection**: Automatically recognizes when you paste a job description.
+- **Improved Multi-Task Planning**: Handle complex requests that require multiple analysis steps.
+- **Production-Grade Error Handling**: Robust error recovery and informative error messages.
 
 ## Tech Stack
 
 - **Framework:** Streamlit
 - **AI Orchestration:** LangGraph
 - **LinkedIn Scraping:** Apify
-- **LLM:** OpenAI GPT-4o
+- **LLM:** OpenAI GPT-4o (with GPT-4-turbo for complex planning tasks)
 - **Memory:** LangGraph Checkpointers with SQLite
+- **Backend:** FastAPI
+- **State Management:** Enhanced GraphState with job history tracking
 
 ## Setup
 
@@ -59,7 +66,7 @@ This project is an AI-powered chat system that helps users optimize their Linked
 
 ## Architecture
 
-This application is built using a client-server architecture.
+This application is built using a client-server architecture with an advanced context-aware AI system.
 
 ### Core Components:
 
@@ -67,8 +74,16 @@ This application is built using a client-server architecture.
     *   **LangGraph Workflow**: The multi-agent system, router, and all AI logic reside here.
     *   **Checkpointer (Memory)**: The backend manages the `SqliteSaver` checkpointer for persistent, session-based memory.
     *   **Endpoints**: It provides endpoints to start a new chat, send a message, and get the history.
+    *   **Enhanced Error Handling**: Added traceback import for better debugging capabilities.
 
 2.  **Streamlit Frontend (`app.py`)**: This provides the interactive chat interface for the user. It is a "dumb" client that simply makes HTTP requests to the FastAPI backend. It manages a `thread_id` to maintain the session with the backend.
+
+3.  **Context Manager (`src/context_manager.py`)**: A sophisticated conversation context management system that:
+    *   **Intent Recognition**: Intelligently understands user intent across multiple conversation turns
+    *   **Job History Tracking**: Maintains a history of all analyzed job descriptions with unique IDs
+    *   **Reference Resolution**: Handles references to previously discussed jobs (e.g., "the previous role", "that data scientist position")
+    *   **Comparison Support**: Detects when users want to compare multiple job opportunities
+    *   **Smart JD Detection**: Automatically identifies when users paste job descriptions vs. asking questions
 
 ### How it Works:
 
@@ -79,6 +94,31 @@ This application is built using a client-server architecture.
 5.  The Streamlit app saves this `thread_id` and uses it for all future requests.
 6.  When the user sends a message, the UI makes a `POST` request to the `/chat/{thread_id}` endpoint. The backend processes the message through the LangGraph workflow and saves the state.
 7.  The UI periodically makes `GET` requests to `/history/{thread_id}` to refresh the chat display.
+
+### Enhanced Workflow (Graph System):
+
+The application now uses an advanced graph-based workflow system (`src/graph.py`) with the following improvements:
+
+1. **Master Planner Node**: 
+   - Production-grade intent understanding using the Context Manager
+   - Creates multi-step execution plans based on user requests
+   - Handles complex scenarios like job comparisons and references
+
+2. **Plan Executor Node**: 
+   - Executes tasks sequentially based on the planner's output
+   - Manages state transitions between different agents
+   - Ensures robust error handling at each step
+
+3. **Enhanced Agent Nodes**:
+   - **Search Node**: Context-aware job searching with caching
+   - **Job Fit Analyst**: Improved error handling and fallback mechanisms
+   - **Content Enhancer**: Profile section rewriting capabilities
+   - **Career Counselor**: General career advice with context awareness
+
+4. **State Management**:
+   - Tracks job description history with unique IDs
+   - Maintains current job context for follow-up questions
+   - Stores conversation context for intelligent responses
 
 ## Challenges and Solutions
 
@@ -91,4 +131,17 @@ This application is built using a client-server architecture.
         2.  **Contextual Prompt Engineering**: Each agent's prompt is carefully crafted to only include the data it needs from the `GraphState`. For example, the `job_fit_analyst` only receives the profile data and the job description, not the entire chat history.
 
 *   **Challenge**: Maintaining context across multiple user sessions and interactions.
-    *   **Solution**: We leveraged LangGraph's built-in `SqliteSaver` checkpointer. It automatically saves the entire graph state after each step, tied to a unique session ID. This provides robust, persistent memory with minimal manual setup. 
+    *   **Solution**: We leveraged LangGraph's built-in `SqliteSaver` checkpointer. It automatically saves the entire graph state after each step, tied to a unique session ID. This provides robust, persistent memory with minimal manual setup.
+
+*   **Challenge**: Handling complex multi-task requests in a single query.
+    *   **Solution**: Implemented a Master Planner and Plan Executor architecture that:
+        - Breaks down complex requests into sequential tasks
+        - Maintains execution state between tasks
+        - Provides clear error handling and recovery
+
+*   **Challenge**: Managing multiple job descriptions and references in conversations.
+    *   **Solution**: Created a sophisticated Context Manager that:
+        - Assigns unique IDs to each job description
+        - Tracks job history throughout the conversation
+        - Intelligently resolves references like "the previous job" or "that data scientist role"
+        - Supports comparisons between multiple jobs 
