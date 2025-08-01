@@ -46,8 +46,13 @@ class StartRequest(BaseModel):
         # Clean up the URL
         v = v.strip()
         
-        # Add https:// if missing
-        if not v.startswith(('http://', 'https://')):
+        # Check if it's just a username (no domain)
+        if not any(domain in v.lower() for domain in ['linkedin.com', 'http://', 'https://', 'www.']):
+            # It's just a username, construct the full URL
+            v = f'https://www.linkedin.com/in/{v}'
+        
+        # Add https:// if missing but has linkedin.com
+        elif not v.startswith(('http://', 'https://')):
             v = 'https://' + v
         
         # More flexible LinkedIn URL validation - accept various formats
@@ -62,8 +67,9 @@ class StartRequest(BaseModel):
             raise ValueError(
                 'Invalid LinkedIn URL format. Expected formats:\n'
                 '• https://www.linkedin.com/in/username\n'
-                '• https://linkedin.com/in/firstname-lastname\n'
-                '• linkedin.com/in/username (https:// will be added automatically)'
+                '• linkedin.com/in/username\n'
+                '• dhruv-patel7 (just the username)\n'
+                '• firstname-lastname-123456'
             )
         
         # Remove any query parameters or fragments

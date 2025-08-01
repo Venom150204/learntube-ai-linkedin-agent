@@ -49,7 +49,10 @@ def main():
     
     # 1. Initial Screen: Enter LinkedIn URL
     if not st.session_state.thread_id:
-        linkedin_url = st.text_input("Enter your LinkedIn Profile URL to begin.")
+        linkedin_url = st.text_input(
+            "Enter your LinkedIn Profile URL or username", 
+            placeholder="e.g., dhruv-patel7/ or https://linkedin.com/in/dhruv-patel7/"
+        )
         if st.button("Start Analysis"):
             if linkedin_url:
                 with st.spinner("Starting analysis... This may take a moment."):
