@@ -43,10 +43,32 @@ class StartRequest(BaseModel):
     
     @validator('linkedin_url')
     def validate_linkedin_url(cls, v):
-        # Comprehensive LinkedIn URL validation
-        linkedin_pattern = r'^https?://(www\.)?linkedin\.com/in/[\w\-]+/?$'
-        if not re.match(linkedin_pattern, v):
-            raise ValueError('Invalid LinkedIn URL format. Expected: https://www.linkedin.com/in/username')
+        # Clean up the URL
+        v = v.strip()
+        
+        # Add https:// if missing
+        if not v.startswith(('http://', 'https://')):
+            v = 'https://' + v
+        
+        # More flexible LinkedIn URL validation - accept various formats
+        linkedin_patterns = [
+            r'^https?://(www\.)?linkedin\.com/in/[\w\-\.]+/?',  # Allow dots and underscores
+            r'^https?://(www\.)?linkedin\.com/pub/[\w\-\.]+/?',  # Public profiles
+            r'^https?://(www\.)?linkedin\.com/profile/',  # Old format
+        ]
+        
+        # Check if URL matches any pattern
+        if not any(re.match(pattern, v) for pattern in linkedin_patterns):
+            raise ValueError(
+                'Invalid LinkedIn URL format. Expected formats:\n'
+                '• https://www.linkedin.com/in/username\n'
+                '• https://linkedin.com/in/firstname-lastname\n'
+                '• linkedin.com/in/username (https:// will be added automatically)'
+            )
+        
+        # Remove any query parameters or fragments
+        v = v.split('?')[0].split('#')[0]
+        
         return v
 
 class ChatRequest(BaseModel):

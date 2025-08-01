@@ -11,7 +11,19 @@ API_BASE_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 def start_analysis(linkedin_url: str):
     """Calls the /start_analysis endpoint and returns the new thread_id."""
     response = requests.post(f"{API_BASE_URL}/start_analysis", json={"linkedin_url": linkedin_url})
-    response.raise_for_status() # Will raise an exception for 4XX/5XX errors
+    
+    # Handle validation errors specifically
+    if response.status_code == 422:
+        error_detail = response.json().get("detail", [])
+        if isinstance(error_detail, list) and error_detail:
+            # Pydantic validation error format
+            error_msg = error_detail[0].get("msg", "Invalid input")
+        else:
+            # Direct error message
+            error_msg = error_detail
+        raise ValueError(error_msg)
+    
+    response.raise_for_status() # Will raise an exception for other 4XX/5XX errors
     return response.json()["thread_id"]
 
 def post_message(thread_id: str, message: str):
@@ -47,6 +59,9 @@ def main():
                         # Wait a moment for the initial analysis to be available
                         time.sleep(5) 
                         st.rerun()
+                    except ValueError as e:
+                        # Handle validation errors - just show the error once
+                        st.error(str(e))
                     except requests.exceptions.RequestException as e:
                         st.error(f"Failed to connect to the backend: {e}")
             else:
