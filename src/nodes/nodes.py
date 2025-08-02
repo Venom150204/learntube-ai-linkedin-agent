@@ -572,18 +572,62 @@ def content_enhancer_node(state: GraphState):
     llm = get_llm_with_fallback(model="llama-3.3-70b-versatile", temperature=0.7)
 
     sections_to_rewrite = []
-    if "headline" in user_request.lower():
-        sections_to_rewrite.append("headline")
-    if "about" in user_request.lower():
-        sections_to_rewrite.append("about")
-    if "experience" in user_request.lower():
-        sections_to_rewrite.append("experience")
-
+    request_lower = user_request.lower()
+    
+    # Smart contextual detection using regex patterns
+    import re
+    
+    # Pattern to detect section requests with context
+    # Matches: "rewrite my about", "enhance the about section", "improve about section", etc.
+    section_patterns = {
+        "headline": [
+            r'\b(?:rewrite|enhance|improve|update|modify|change)\s+(?:my\s+)?(?:the\s+)?headline',
+            r'headline\s+(?:section|part)',
+            r'\bmy\s+(?:professional\s+)?title\b'
+        ],
+        "about": [
+            r'\b(?:rewrite|enhance|improve|update|modify|change)\s+(?:my\s+)?(?:the\s+)?about\s+(?:section)?',
+            r'about\s+(?:section|part|me)',
+            r'\b(?:my\s+)?(?:professional\s+)?(?:summary|overview)\b(?:\s+section)?'
+        ],
+        "experience": [
+            r'\b(?:rewrite|enhance|improve|update|modify|change)\s+(?:my\s+)?(?:the\s+)?experience\s+(?:section)?',
+            r'experience\s+(?:section|part)',
+            r'\b(?:my\s+)?work\s+(?:history|experience)\b',
+            r'\b(?:my\s+)?(?:job|employment)\s+(?:history|section)\b'
+        ]
+    }
+    
+    # Check each section's patterns
+    for section, patterns in section_patterns.items():
+        for pattern in patterns:
+            if re.search(pattern, request_lower):
+                sections_to_rewrite.append(section)
+                break  # Avoid duplicate additions
+    
+    # If still no sections detected, look for section names immediately after action verbs
     if not sections_to_rewrite:
-        sections_to_rewrite = ["headline", "about", "experience"]
-        print(
-            f"No specific section found in request, defaulting to full review of: {sections_to_rewrite}"
-        )
+        # Look for patterns like "rewrite about" without "my" or "the"
+        simple_patterns = {
+            "headline": r'\b(?:rewrite|enhance|improve|update|modify|change|edit)\s+headline\b',
+            "about": r'\b(?:rewrite|enhance|improve|update|modify|change|edit)\s+about\b',
+            "experience": r'\b(?:rewrite|enhance|improve|update|modify|change|edit)\s+experience\b'
+        }
+        
+        for section, pattern in simple_patterns.items():
+            if re.search(pattern, request_lower):
+                sections_to_rewrite.append(section)
+
+    # Debug: Print what was detected
+    print(f"Content Enhancer: User request: '{user_request[:100]}...'")
+    print(f"Content Enhancer: Detected sections to rewrite: {sections_to_rewrite}")
+    
+    # If no specific section is mentioned, ask for clarification
+    if not sections_to_rewrite:
+        return {
+            "messages": [AIMessage(content="I'd be happy to enhance your LinkedIn profile! Please specify which section(s) you'd like me to rewrite:\n\n• **Headline** - Your professional title and key expertise\n• **About** - Your professional summary and story\n• **Experience** - Your work history and achievements\n\nFor example: 'Please rewrite my about section' or 'Enhance my headline and experience'")],
+            "plan": []
+        }
     else:
         print(f"Identified sections for rewrite: {sections_to_rewrite}")
 
@@ -596,17 +640,19 @@ def content_enhancer_node(state: GraphState):
 
     I want you to enhance my LinkedIn profile based on my request. Here is your task:
 
-    1.  **Generate Rewrites:** For each of the following sections I've asked for (`{', '.join(sections_to_rewrite)}`), provide a rewritten, enhanced version based on the rules below. Present each rewritten section under a clear markdown heading (e.g., `## Enhanced About Section`).
+    **IMPORTANT: Only rewrite the sections I specifically asked for: {', '.join(sections_to_rewrite)}**
+    
+    For each requested section, provide a rewritten, enhanced version based on the rules below. Present each rewritten section under a clear markdown heading (e.g., `## Enhanced About Section`).
         *   **For 'headline':** Create a concise, keyword-rich headline (under 220 characters) that includes my current role and key area of expertise (e.g., "Software Engineer at XYZ | Building with Generative AI & LLMs").
         *   **For 'about':** Write a compelling, first-person summary (under 150 words) that tells a story about my passion and impact.
         *   **For 'experience':** For my most recent job role, rewrite the description using 3-4 bullet points. Each bullet point **must be a single, flowing sentence that internally follows the STAR method (Situation, Task, Action, Result)** but **DO NOT** explicitly write the words "Situation:", "Task:", "Action:", or "Result:". For example, instead of "Situation: Faced with X... Task: Needed to Y... Action: I did Z... Result: Achieved A...", write "- Achieved A by implementing Z to solve the challenge of X, which was required for Y." Include quantifiable metrics.
-
-    2.  **Be Proactive:** After you have rewritten the sections I asked for, analyze my entire profile. Identify the **single most valuable section** that I *did not* ask you to improve. Then, provide an enhanced version of it under the heading `## Proactive Suggestion`.
 
     **My Full Profile:**
     ---
     {profile_data}
     ---
+    
+    Remember: ONLY provide rewrites for the sections I specifically asked for. Do not add any additional sections or proactive suggestions.
 
     **My Original Request:**
     ---

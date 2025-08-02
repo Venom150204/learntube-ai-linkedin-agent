@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, validator, HttpUrl
+from pydantic import BaseModel, field_validator
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import uuid
@@ -41,7 +41,7 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "memory.sqlite")
 class StartRequest(BaseModel):
     linkedin_url: str
     
-    @validator('linkedin_url')
+    @field_validator('linkedin_url')
     def validate_linkedin_url(cls, v):
         # Clean up the URL
         v = v.strip()
@@ -80,7 +80,7 @@ class StartRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     
-    @validator('message')
+    @field_validator('message')
     def validate_message(cls, v):
         if not v or not v.strip():
             raise ValueError('Message cannot be empty')
